@@ -22,19 +22,24 @@ func main() {
 	r.Handle("/app", fsHandler)
 	r.Handle("/app/*", fsHandler)
 	r.HandleFunc("/hola", holaMundo)
-	//r.Get("/api/healthz", healthCheckHandler)
-	//r.Get("/api/metrics", apiCfg.handlerMetrics)
-	//r.Get("/reset", apiCfg.resetHandler)
 
 	// Create a new router to bind and register the /healthz, /reset and /metrics endpoints on, and then r.Mount() that router at /api in our main router.
 	apiRouter := func() http.Handler {
 		r := chi.NewRouter()
 		r.Get("/healthz", healthCheckHandler)
-		r.Get("/metrics", apiCfg.handlerMetrics)
 		r.Get("/reset", apiCfg.resetHandler)
+		r.Post("/validate_chirp", handlerChirpsValidate)
 		return r
 	}
+
+	adminRouter := func() http.Handler {
+		r := chi.NewRouter()
+		r.Get("/metrics", apiCfg.handlerMetrics)
+		return r
+	}
+
 	r.Mount("/api", apiRouter())
+	r.Mount("/admin", adminRouter())
 
 	// Ahora envuelve mux con el middleware CORS
 	corsMux := middlewareCors(r)
