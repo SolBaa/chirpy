@@ -1,18 +1,26 @@
 package main
 
 import (
+	database "github.com/SolBaa/chirpy/internal"
 	"github.com/go-chi/chi/v5"
+	"log"
 	"net/http"
 )
 
 type apiConfig struct {
 	fileserverHits int
+	DB             *database.DB
 }
 
 func main() {
 	filepathRoot := "."
+	db, err := database.NewDB("database.json")
+	if err != nil {
+		log.Fatal(err)
+	}
 	apiCfg := &apiConfig{
 		fileserverHits: 0,
+		DB:             db,
 	}
 
 	r := chi.NewRouter()
@@ -28,7 +36,11 @@ func main() {
 		r := chi.NewRouter()
 		r.Get("/healthz", healthCheckHandler)
 		r.Get("/reset", apiCfg.resetHandler)
-		r.Post("/validate_chirp", handlerChirpsValidate)
+		r.Get("/chirps", apiCfg.handlerChirpsGet)
+		r.Post("/chirps", apiCfg.handlerChirpsCreate)
+		r.Get("/chirps/{id}", apiCfg.handlerChirpsGetOne)
+		r.Post("/users", apiCfg.handlerUsersCreate)
+		//r.Post("/validate_chirp", handlerChirpsValidate)
 		return r
 	}
 
