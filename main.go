@@ -40,6 +40,7 @@ func main() {
 		r.Post("/chirps", apiCfg.handlerChirpsCreate)
 		r.Get("/chirps/{id}", apiCfg.handlerChirpsGetOne)
 		r.Post("/users", apiCfg.handlerUsersCreate)
+		r.Post("/login", apiCfg.handlerLogin)
 		//r.Post("/validate_chirp", handlerChirpsValidate)
 		return r
 	}

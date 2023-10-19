@@ -12,8 +12,8 @@ type DB struct {
 	mu   *sync.RWMutex
 }
 type DBStructure struct {
-	Chirps map[int]Chirp `json:"chirps"`
-	Users  map[int]User  `json:"email"`
+	Chirps map[int]Chirp   `json:"chirps"`
+	Users  map[string]User `json:"email"`
 }
 
 func NewDB(path string) (*DB, error) {
@@ -28,7 +28,7 @@ func NewDB(path string) (*DB, error) {
 func (db *DB) createDB() error {
 	dbStructure := DBStructure{
 		Chirps: map[int]Chirp{},
-		Users:  map[int]User{},
+		Users:  map[string]User{},
 	}
 	return db.writeDB(dbStructure)
 }
