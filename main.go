@@ -3,16 +3,26 @@ package main
 import (
 	database "github.com/SolBaa/chirpy/internal"
 	"github.com/go-chi/chi/v5"
+	"github.com/joho/godotenv"
 	"log"
 	"net/http"
+	"os"
 )
 
 type apiConfig struct {
 	fileserverHits int
 	DB             *database.DB
+	JwtSecret      string
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+
 	filepathRoot := "."
 	db, err := database.NewDB("database.json")
 	if err != nil {
@@ -21,6 +31,7 @@ func main() {
 	apiCfg := &apiConfig{
 		fileserverHits: 0,
 		DB:             db,
+		JwtSecret:      jwtSecret,
 	}
 
 	r := chi.NewRouter()
@@ -41,6 +52,7 @@ func main() {
 		r.Get("/chirps/{id}", apiCfg.handlerChirpsGetOne)
 		r.Post("/users", apiCfg.handlerUsersCreate)
 		r.Post("/login", apiCfg.handlerLogin)
+		r.Put("/users", apiCfg.handlerUsersUpdate)
 		//r.Post("/validate_chirp", handlerChirpsValidate)
 		return r
 	}

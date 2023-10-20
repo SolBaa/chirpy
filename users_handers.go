@@ -2,19 +2,33 @@ package main
 
 import (
 	"encoding/json"
-	"golang.org/x/crypto/bcrypt"
+	"errors"
+	database "github.com/SolBaa/chirpy/internal"
+	"github.com/SolBaa/chirpy/internal/auth"
 	"net/http"
+	"strconv"
+	"time"
 )
 
+//type User struct {
+//	ID    int    `json:"id"`
+//	Email string `json:"email"`
+//	Token string `json:"token"`
+//}
+
 type User struct {
-	ID    int    `json:"id"`
-	Email string `json:"email"`
+	ID       int    `json:"id"`
+	Email    string `json:"email"`
+	Password string `json:"-"`
 }
 
 func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Password string `json:"password"`
 		Email    string `json:"email"`
+	}
+	type response struct {
+		User
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -24,39 +38,50 @@ func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters")
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(params.Password), bcrypt.DefaultCost)
+
+	hashedPassword, err := auth.HashPassword(params.Password)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't hash password")
 		return
 	}
 
-	user, err := cfg.DB.CreateUser(params.Email, string(hash))
+	user, err := cfg.DB.CreateUser(params.Email, hashedPassword)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't create chirp")
+		if errors.Is(err, database.ErrAlreadyExists) {
+			respondWithError(w, http.StatusConflict, "User already exists")
+			return
+		}
+
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create user")
 		return
 	}
 
-	respondWithJSON(w, http.StatusCreated, User{
-		ID:    user.ID,
-		Email: user.Email,
+	respondWithJSON(w, http.StatusCreated, response{
+		User: User{
+			ID:    user.ID,
+			Email: user.Email,
+		},
 	})
 }
 
-//func (cfg *apiConfig) handlerUsersGet(w http.ResponseWriter, r *http.Request) {
-//	users, err := cfg.DB.GetUsers()
-//	if err != nil {
-//		respondWithError(w, http.StatusInternalServerError, "Couldn't get chirps")
-//		return
-//	}
+//	func (cfg *apiConfig) handlerUsersGet(w http.ResponseWriter, r *http.Request) {
+//		users, err := cfg.DB.GetUsers()
+//		if err != nil {
+//			respondWithError(w, http.StatusInternalServerError, "Couldn't get chirps")
+//			return
+//		}
 //
-//	respondWithJSON(w, http.StatusOK, users)
-//}
-
+//		respondWithJSON(w, http.StatusOK, users)
+//	}
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
-
 	type parameters struct {
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password         string `json:"password"`
+		Email            string `json:"email"`
+		ExpiresInSeconds int    `json:"expires_in_seconds"`
+	}
+	type response struct {
+		User
+		Token string `json:"token"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -73,14 +98,83 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(params.Password))
+	err = auth.CheckPasswordHash(params.Password, user.Password)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "Invalid password")
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, User{
-		ID:    user.ID,
-		Email: user.Email,
+	defaultExpiration := 60 * 60 * 24
+	if params.ExpiresInSeconds == 0 {
+		params.ExpiresInSeconds = defaultExpiration
+	} else if params.ExpiresInSeconds > defaultExpiration {
+		params.ExpiresInSeconds = defaultExpiration
+	}
+
+	token, err := auth.MakeJWT(user.ID, cfg.JwtSecret, time.Duration(params.ExpiresInSeconds)*time.Second)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create JWT")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, response{
+		User: User{
+			ID:    user.ID,
+			Email: user.Email,
+		},
+		Token: token,
+	})
+}
+func (cfg *apiConfig) handlerUsersUpdate(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+	type response struct {
+		User
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT")
+		return
+	}
+	subject, err := auth.ValidateJWT(token, cfg.JwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT")
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't hash password")
+		return
+	}
+
+	userIDInt, err := strconv.Atoi(subject)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't parse user ID")
+		return
+	}
+
+	user, err := cfg.DB.UpdateUser(userIDInt, params.Email, hashedPassword)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create user")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, response{
+		User: User{
+			ID:    user.ID,
+			Email: user.Email,
+		},
 	})
 }
